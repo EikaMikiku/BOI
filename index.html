@@ -16,10 +16,10 @@
 		}
 		#board {
 			display: flex;
-        	align-items: center;
+			align-items: center;
 			margin: 0;
-            height: 100vh;
-			width: 70vw;
+			height: 100vh;
+			width: 500px;
 		}
 		.white-1e1d7 {
 			background: #ffffff;
@@ -33,260 +33,265 @@
 	<div id="board"></div>
 </body>
 <script type="text/javascript">
-    window.addEventListener("resize", function() {
-        window.board.resize();
-    });
-	window.wallpaperPropertyListener = {
-		applyUserProperties: function(properties) {
-			if(properties.background) {
-				let rgb = properties.background.value.split(" ");
-				rgb[0] = Math.round(rgb[0] * 255);
-				rgb[1] = Math.round(rgb[1] * 255);
-				rgb[2] = Math.round(rgb[2] * 255);
-				document.body.style.background = "rgb("+rgb[0]+","+rgb[1]+","+rgb[2]+")";
-			}
-
-			if(properties.board_width) {
-				document.getElementById("board").style.width = properties.board_width.value + "px";
-				if(window.board) {
-					window.board.resize();
-				}
-			}
-
-			if(properties.game_speed) {
-				window.gameSpeed = parseInt(properties.game_speed.value);
-			}
-
-			if(properties.new_game_delay) {
-				window.newGameDelay = parseInt(properties.new_game_delay.value);
-			}
-
-			if(properties.light_squares) {
-				let rgb = properties.light_squares.value.split(" ");
-				rgb[0] = Math.round(rgb[0] * 255);
-				rgb[1] = Math.round(rgb[1] * 255);
-				rgb[2] = Math.round(rgb[2] * 255);
-				document.styleSheets[1].cssRules[2].style.background = "rgb("+rgb[0]+","+rgb[1]+","+rgb[2]+")";
-			}
-
-			if(properties.dark_squares) {
-				let rgb = properties.dark_squares.value.split(" ");
-				rgb[0] = Math.round(rgb[0] * 255);
-				rgb[1] = Math.round(rgb[1] * 255);
-				rgb[2] = Math.round(rgb[2] * 255);
-				document.styleSheets[1].cssRules[3].style.background = "rgb("+rgb[0]+","+rgb[1]+","+rgb[2]+")";
-			}
-		}
+	let pieceCost = {
+		p: 1, n: 3, b: 3, r: 5, q: 9, k: Infinity
 	};
-    let pieceCost = {
-        p: 1, n: 3, b: 3, r: 5, q: 9, k: Infinity
-    };
+	let pieceActivityWeights = {
+		p: 0.01, n: 0.05, b: 0.05, r: 0.05, q: 0.01, k: 0.01
+	};
 
 	let boardConfig = {
+		draggable: true,
 		showNotation: false,
 		position: "start",
 		moveSpeed: "fast",
-		pieceTheme: 'img/chesspieces/alpha/{piece}.png'
+		pieceTheme: "img/chesspieces/alpha/{piece}.png",
+		onDrop: function(from, to) {
+			let move = game.move({
+				from: from,
+				to: to,
+				promotion: "q"
+			});
+			if (move === null) {
+				return "snapback";
+			}
+			setTimeout(MakePseudoRandomMove, 250);
+		}
 	};
 
 	window.gameSpeed = 250;
 	window.newGameDelay = 1;
 	window.board = ChessBoard("board", boardConfig);
 	window.game = new Chess();
-    window.setTimeout(MakePseudoRandomMove, 200);
+
+	function analyseMove(move, depth) {
+		let value = move.value;
+		let fen = window.game.fen();
+
+		//Apply position value to the move
+		value -= getPositionValue();
+		window.game.move(move.move);
+		switchSide();
+		value += getPositionValue();
+		window.game.load(fen); //Reset the game
+
+		if(depth <= 0) {
+			return value;
+		} else {
+			window.game.move(move.move);
+			var enemyBestMove = findBestMove(depth - 1);
+			window.game.load(fen); //Reset the game
+			return value - enemyBestMove.value;
+		}
+	}
+
+	function findBestMove(depth) {
+		let possibleMoves = window.game.moves({verbose:true});
+
+		//Always do the checkmate immediatly
+		for(let i = 0; i < possibleMoves.length; i++) {
+			if(possibleMoves[i].san.indexOf("#") >= 0) {
+				return {
+					move: possibleMoves[i],
+					value: Infinity
+				};
+			}
+		}
+
+		//Find all candidate moves, make sure they are unique
+		let _uniqifier = {};
+		let candidateMoves = [];
+		let freeCaptures = getFreeCaptures(possibleMoves);
+		let valueCaptures = getValueCaptures(possibleMoves);
+		let safeMoves = getSafeMoves(possibleMoves);
+		for(let i = 0; i < freeCaptures.length; i++) {
+			if(!_uniqifier[freeCaptures[i].move.san]) {
+				_uniqifier[freeCaptures[i].move.san] = true;
+				candidateMoves.push(freeCaptures[i]);
+			}
+		}
+		for(let i = 0; i < valueCaptures.length; i++) {
+			if(!_uniqifier[valueCaptures[i].move.san]) {
+				_uniqifier[valueCaptures[i].move.san] = true;
+				candidateMoves.push(valueCaptures[i]);
+			}
+		}
+		for(let i = 0; i < safeMoves.length; i++) {
+			if(!_uniqifier[safeMoves[i].move.san]) {
+				_uniqifier[safeMoves[i].move.san] = true;
+				candidateMoves.push(safeMoves[i]);
+			}
+		}
+
+		//Analyse candidate moves
+		let bestMoves = [];
+		let bestValue = -Infinity;
+		for(let i = 0; i < candidateMoves.length; i++) {
+			var value = analyseMove(candidateMoves[i], depth);
+			if(value > bestValue) {
+				bestValue = value;
+				bestMoves = [candidateMoves[i].move];
+			} else if(value === bestValue) {
+				bestMoves.push(candidateMoves[i].move);
+			}
+		}
+
+		//Give a random best move
+		return {
+			move: bestMoves[Math.floor(Math.random() * bestMoves.length)],
+			value: bestValue
+		};
+	}
 
 	function MakePseudoRandomMove() {
 		let possibleMoves = window.game.moves({verbose:true});
 		if(window.game.game_over() || window.game.in_draw() || possibleMoves.length === 0) {
 			return setTimeout(function() {
-				game.reset();
-				MakePseudoRandomMove();
+				window.game.reset();
+				window.board.position(window.game.fen());
 			}, window.newGameDelay * 1000);
 		}
 
-		let move = null;
-
-        //If there is a checkmate, then checkmate
-        let foundCheckmate = false;
-        for(let i = 0; i < possibleMoves.length; i++) {
-            if(possibleMoves[i].san.indexOf("#") >= 0) {
-                move = possibleMoves[i];
-                foundCheckmate = true;
-                break;
-            }
-        }
-
-        if(!foundCheckmate) {
-            //Try to find a most valued free capture
-            let possibleFreeCaptures = getFreeCaptures(possibleMoves);
-            if(possibleFreeCaptures.length > 0) {
-                move = possibleFreeCaptures[Math.floor(Math.random() * possibleFreeCaptures.length)];
-            } else {
-                //If we don't have a free capture
-                //Try to find a valued capture
-                let possibleCaptures = getValueCaptures(possibleMoves);
-                if(possibleCaptures.length > 0) {
-                    move = possibleCaptures[Math.floor(Math.random() * possibleCaptures.length)];
-                } else {
-                    //If we don't have any good captures
-                    //Check if we need to save some piece from capture
-                    let attacked = getMostValuedAttackedSquare();
-                    let foundEscapeMove = false;
-                    if(attacked) {
-                        let possibleSafeMoves = getSafeMoves(possibleMoves);
-                        for(let i = 0; i < possibleSafeMoves.length; i++) {
-                            let m = possibleSafeMoves[i];
-                            if(m.from === attacked) {
-                                //There is an escape move!
-                                foundEscapeMove = true;
-                                move = m;
-                                break;
-                            }
-                        }
-                    }
-                    if(!foundEscapeMove) {
-                        //If nothing of value is attacked
-                        //Try to find a safe move
-                        let possibleSafeMoves = getSafeMoves(possibleMoves);
-                        if(possibleSafeMoves.length > 0) {
-                            move = possibleSafeMoves[Math.floor(Math.random() * possibleSafeMoves.length)];
-                        }
-                    }
-                }
-            }
-        }
-
-        //If no checkmate, free capture, value capture
-        //Pick random move
-        if(!move) {
-            move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-        }
-
-		window.game.move(move);
-		//Stop movement animations on a fast timer
-		window.board.position(window.game.fen(), window.gameSpeed < 250 ? false : true);
-		window.setTimeout(MakePseudoRandomMove, window.gameSpeed);
+		let moveData = findBestMove(1);
+		window.game.move(moveData.move);
+		window.board.position(window.game.fen());
 	}
 
-    function getFreeCaptures(moves) {
-        let possibleFreeCaptures = [];
-        let maxValue = -Infinity; //We want any free capture at first
-        for(let i = 0; i < moves.length; i++) {
-            let m = moves[i];
-            if(m.captured) {
-                let isNotFree = false;
-                //Test out capture
-                window.game.move(m);
-                //Check if are re-captures on that square
-                let newPossibleMoves = window.game.moves({verbose:true});
-                for(let k = 0; k < newPossibleMoves.length; k++) {
-                    let m2 = newPossibleMoves[k];
-                    if(m2.captured && m2.to === m.to) {
-                        isNotFree = true;
-                        break;
-                    }
-                }
-                
-                window.game.undo(); //Restore previous position
+	function getFreeCaptures(moves) {
+		let possibleFreeCaptures = [];
+		for(let i = 0; i < moves.length; i++) {
+			let m = moves[i];
+			if(m.captured) {
+				let isNotFree = false;
+				//Test out capture
+				window.game.move(m);
+				//Check if are re-captures on that square
+				let newPossibleMoves = window.game.moves({verbose:true});
+				for(let k = 0; k < newPossibleMoves.length; k++) {
+					let m2 = newPossibleMoves[k];
+					if(m2.captured && m2.to === m.to) {
+						isNotFree = true;
+						break;
+					}
+				}
+				
+				window.game.undo(); //Restore previous position
 
-                if(isNotFree) {
-                    continue; //Try next capture
-                } else {
-                    let value = pieceCost[m.captured];
-                    if(value > maxValue) {
-                        possibleFreeCaptures = [m];
-                        maxValue = value;
-                    } else if(value === maxValue) {
-                        possibleFreeCaptures.push(m);
-                    }
-                }
-            }
-        }
-        return possibleFreeCaptures;
-    }
+				if(isNotFree) {
+					continue; //Try next capture
+				} else {
+					possibleFreeCaptures = [{
+						move: m,
+						value: pieceCost[m.captured]
+					}];
+				}
+			}
+		}
+		return possibleFreeCaptures;
+	}
 
-    function getValueCaptures(moves) {
-        let possibleCaptures = [];
-        let maxValue = 0;
-        for(let i = 0; i < moves.length; i++) {
-            let m = moves[i];
-            if(m.captured) {
-                let value = pieceCost[m.captured] - pieceCost[m.piece];
-                if(value > 0) {
-                    if(value > maxValue) {
-                        move = m;
-                        possibleCaptures = [m];
-                        maxValue = value;
-                    } else if(value === maxValue) {
-                        possibleCaptures.push(m);
-                    }
-                } 
-            }
-        }
-        return possibleCaptures;
-    }
+	function getValueCaptures(moves) {
+		let possibleCaptures = [];
+		for(let i = 0; i < moves.length; i++) {
+			let m = moves[i];
+			if(m.captured) {
+				let value = pieceCost[m.captured] - pieceCost[m.piece];
+				if(value >= 0) {
+					possibleCaptures.push({
+						move: m,
+						value: value
+					})
+				} 
+			}
+		}
+		return possibleCaptures;
+	}
 
-    function getSafeMoves(moves) {
-        let possibleSafeMoves = [];
-        for(let i = 0; i < moves.length; i++) {
-            let m = moves[i];
-            window.game.move(m);
-            let newPossibleMoves = window.game.moves({verbose:true});
-            let isSafe = true;
-            for(let k = 0; k < newPossibleMoves.length; k++) {
-                let m2 = newPossibleMoves[k];
-                if(m2.captured && m2.to === m.to) {
-                    isSafe = false;
-                    break;
-                }
-            }
-            
-            window.game.undo(); //Restore previous position
-            
-            if(!isSafe) {
-                continue;
-            } else {
-                possibleSafeMoves.push(m);
-            }
-        }
-        return possibleSafeMoves;
-    }
+	function getSafeMoves(moves) {
+		let possibleSafeMoves = [];
+		for(let i = 0; i < moves.length; i++) {
+			let m = moves[i];
+			window.game.move(m);
+			let newPossibleMoves = window.game.moves({verbose:true});
+			let isSafe = true;
+			for(let k = 0; k < newPossibleMoves.length; k++) {
+				let m2 = newPossibleMoves[k];
+				if(m2.captured && m2.to === m.to) {
+					isSafe = false;
+					break;
+				}
+			}
+			
+			window.game.undo(); //Restore previous position
+			
+			if(!isSafe) {
+				continue;
+			} else {
+				possibleSafeMoves.push({
+					move: m,
+					value: 0
+				});
+			}
+		}
+		return possibleSafeMoves;
+	}
 
-    function getMostValuedAttackedSquare() {
-        switchSide();
-        let newPossibleMoves = window.game.moves({verbose:true});
-        let freeCap = getFreeCaptures(newPossibleMoves);
-        let valCap = getValueCaptures(newPossibleMoves);
-        for(let i = 0; i < freeCap.length; i++) {
-            let val = pieceCost[freeCap[i].captured];
-            freeCap[i].val = val;
-        }
-        for(let i = 0; i < valCap.length; i++) {
-            let val = pieceCost[valCap[i].captured] - pieceCost[valCap[i].piece];
-            valCap[i].val = val;
-        }
+	function getPositionValue() {
+		let moves = window.game.moves({verbose:true});
+		let sum = 0;
+		for(let i = 0; i < moves.length; i++) {
+			let m = moves[i];
+			sum += pieceActivityWeights[m.piece];
+		}
+		return sum;
+	}
 
-        let mostValSquare = null;
-        let maxValue = 0;
-        let allMoves = freeCap.concat(valCap);
+	function getMostValuedAttackedSquare() {
+		let fen = window.game.fen();
+		switchSide();
+		let newPossibleMoves = window.game.moves({verbose:true});
+		let freeCap = getFreeCaptures(newPossibleMoves);
+		let valCap = getValueCaptures(newPossibleMoves);
+		for(let i = 0; i < freeCap.length; i++) {
+			let val = pieceCost[freeCap[i].captured];
+			freeCap[i].val = val;
+		}
+		for(let i = 0; i < valCap.length; i++) {
+			let val = pieceCost[valCap[i].captured] - pieceCost[valCap[i].piece];
+			valCap[i].val = val;
+		}
 
-        for(let i = 0; i < allMoves.length; i++) {
-            if(allMoves[i].val > maxValue) {
-                mostValSquare = allMoves[i].to;
-                maxValue = allMoves[i].val;
-            }
-        }
+		let mostValSquare = null;
+		let maxValue = 0;
+		let allMoves = freeCap.concat(valCap);
 
-        switchSide();
-        return mostValSquare;
-    }
+		for(let i = 0; i < allMoves.length; i++) {
+			if(allMoves[i].val > maxValue) {
+				mostValSquare = allMoves[i].to;
+				maxValue = allMoves[i].val;
+			}
+		}
 
-    function switchSide() {
-        if(window.game.turn() === "w") {
-            window.game.load(window.game.fen().replace(" w ", " b "));
-        } else {
-            window.game.load(window.game.fen().replace(" b ", " w "));
-        }
-    }
+		window.board.load(fen);
+		return mostValSquare;
+	}
+
+	function switchSide() {
+		//Make sure to save fen and load it to switch back
+		//This switch removes enpassant
+		if(window.game.turn() === "w") {
+			window.game.load(
+				window.game.fen()
+				.replace(" w ", " b ")
+				.replace(/\s[a-h][36]\s/, " - ")
+			);
+		} else {
+			window.game.load(
+				window.game.fen()
+				.replace(" b ", " w ")
+				.replace(/\s[a-h][36]\s/, " - ")
+			);
+		}
+	}
 </script>
 </html>
