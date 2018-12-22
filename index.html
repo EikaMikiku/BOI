@@ -27,24 +27,70 @@
 		.black-3c85d {
 			background: #d2d2d2;
 		}
+		input {
+			display: block;
+			position: absolute;
+			bottom: 0;
+			left: 5%;
+			right: 5%;
+			width: 90%;
+			outline: none;
+			border: 1px solid black;
+			padding: 3px;
+		}
+		#fen {
+			top: 0;
+			bottom: auto;
+			text-align: center;
+			width: 500px;
+			margin-left: auto;
+			margin-right: auto;
+		}
+		#thinking {
+			position: absolute;
+			left: 0;
+			height: 80vh;
+			margin-top: -40vh;
+			width: 130px;
+			top: 50%;
+			z-index: 99;
+			border: 1px solid black;
+			border-left: none;
+			font-family: monospace;
+			padding: 3px;
+			overflow: auto;
+			tab-size: 6;
+		}
+		button {
+			position: absolute;
+			right: 0;
+			height: 80vh;
+			margin-top: -40vh;
+			width: 130px;
+			top: 50%;
+		}
 	</style>
 </head>
 <body>
 	<div id="board"></div>
+	<input readonly id="fen">
+	<input readonly id="pgn">
+	<pre id="thinking"></pre>
+	<button onclick="MakePseudoRandomMove()">Make BOI play!</button>
 </body>
 <script type="text/javascript">
+	const MAXDEPTH = 1;
 	let pieceCost = {
 		p: 1, n: 3, b: 3, r: 5, q: 9, k: Infinity
 	};
 	let pieceActivityWeights = {
-		p: 0.01, n: 0.05, b: 0.05, r: 0.05, q: 0.01, k: 0.01
+		p: 0.01, n: 0.06, b: 0.065, r: 0.02, q: 0.01, k: 0.01
 	};
-
 	let boardConfig = {
 		draggable: true,
 		showNotation: false,
 		position: "start",
-		moveSpeed: "fast",
+		moveSpeed: window.animationSpeed,
 		pieceTheme: "img/chesspieces/alpha/{piece}.png",
 		onDrop: function(from, to) {
 			let move = game.move({
@@ -55,22 +101,46 @@
 			if (move === null) {
 				return "snapback";
 			}
-			setTimeout(MakePseudoRandomMove, 250);
+			updateInputs();
+			setTimeout(MakePseudoRandomMove, window.animationSpeed);
 		}
 	};
+	let fenDisplay = document.getElementById("fen");
+	let pgnDisplay = document.getElementById("pgn");
+	let thinkingDisplay = document.getElementById("thinking");
 
-	window.gameSpeed = 250;
-	window.newGameDelay = 1;
+	window.animationSpeed = 100;
+	window.newGameDelay = 3;
 	window.board = ChessBoard("board", boardConfig);
 	window.game = new Chess();
+	window.calcGame = new Chess();
 
 	function analyseMove(move, depth) {
-		let value = move.value;
 		let fen = window.game.fen();
+		let value = -getPositionValue();
+
+		window.game.move(move);
+
+		//If the move was a capture
+		if(move.captured) {
+			//Check if it is a free capture
+			value += pieceCost[move.captured];
+			let isFree = true;
+			window.game.move(move);
+			let newPossibleMoves = window.game.moves({verbose:true});
+			for(let k = 0; k < newPossibleMoves.length; k++) {
+				let m2 = newPossibleMoves[k];
+				if(m2.captured && m2.to === move.to) {
+					isFree = false;
+					break;
+				}
+			}
+			if(!isFree) {
+				value -= pieceCost[move.piece];
+			}
+		}
 
 		//Apply position value to the move
-		value -= getPositionValue();
-		window.game.move(move.move);
 		switchSide();
 		value += getPositionValue();
 		window.game.load(fen); //Reset the game
@@ -78,7 +148,7 @@
 		if(depth <= 0) {
 			return value;
 		} else {
-			window.game.move(move.move);
+			window.game.move(move);
 			var enemyBestMove = findBestMove(depth - 1);
 			window.game.load(fen); //Reset the game
 			return value - enemyBestMove.value;
@@ -98,41 +168,37 @@
 			}
 		}
 
-		//Find all candidate moves, make sure they are unique
-		let _uniqifier = {};
-		let candidateMoves = [];
-		let freeCaptures = getFreeCaptures(possibleMoves);
-		let valueCaptures = getValueCaptures(possibleMoves);
-		let safeMoves = getSafeMoves(possibleMoves);
-		for(let i = 0; i < freeCaptures.length; i++) {
-			if(!_uniqifier[freeCaptures[i].move.san]) {
-				_uniqifier[freeCaptures[i].move.san] = true;
-				candidateMoves.push(freeCaptures[i]);
-			}
+		//Clear thinking box
+		if(depth === MAXDEPTH) {
+			thinkingDisplay.innerHTML = "";
 		}
-		for(let i = 0; i < valueCaptures.length; i++) {
-			if(!_uniqifier[valueCaptures[i].move.san]) {
-				_uniqifier[valueCaptures[i].move.san] = true;
-				candidateMoves.push(valueCaptures[i]);
-			}
-		}
-		for(let i = 0; i < safeMoves.length; i++) {
-			if(!_uniqifier[safeMoves[i].move.san]) {
-				_uniqifier[safeMoves[i].move.san] = true;
-				candidateMoves.push(safeMoves[i]);
+
+		//Analyse moves
+		let bestMoves = [];
+		let bestValue = -Infinity;
+		for(let i = 0; i < possibleMoves.length; i++) {
+			let m = possibleMoves[i];
+			let value = analyseMove(m, depth);
+			value = Math.round(value * 10) / 10; //Allow more options
+			m.value = value; //Store value
+			if(value > bestValue) {
+				bestValue = value;
+				bestMoves = [m];
+			} else if(value === bestValue) {
+				bestMoves.push(m);
 			}
 		}
 
-		//Analyse candidate moves
-		let bestMoves = [];
-		let bestValue = -Infinity;
-		for(let i = 0; i < candidateMoves.length; i++) {
-			var value = analyseMove(candidateMoves[i], depth);
-			if(value > bestValue) {
-				bestValue = value;
-				bestMoves = [candidateMoves[i].move];
-			} else if(value === bestValue) {
-				bestMoves.push(candidateMoves[i].move);
+		if(depth === MAXDEPTH) {
+			//Sort moves by value
+			possibleMoves.sort(function(a, b) {
+				return b.value - a.value;
+			});
+
+			//Update thinking display
+			for(let i = 0; i < possibleMoves.length; i++) {
+				let m = possibleMoves[i];
+				thinkingDisplay.innerHTML += m.san + "\t: " + -m.value + "<br>";
 			}
 		}
 
@@ -144,6 +210,11 @@
 	}
 
 	function MakePseudoRandomMove() {
+		//Switch games, to keep PGN
+		window._game = window.game;
+		window.calcGame.load(window.game.fen());
+		window.game = window.calcGame; 
+
 		let possibleMoves = window.game.moves({verbose:true});
 		if(window.game.game_over() || window.game.in_draw() || possibleMoves.length === 0) {
 			return setTimeout(function() {
@@ -152,88 +223,15 @@
 			}, window.newGameDelay * 1000);
 		}
 
-		let moveData = findBestMove(1);
+		let moveData = findBestMove(MAXDEPTH);
+
+		//Switch back to the original game
+		window.calcGame = window.game;
+		window.game = window._game;
+
 		window.game.move(moveData.move);
 		window.board.position(window.game.fen());
-	}
-
-	function getFreeCaptures(moves) {
-		let possibleFreeCaptures = [];
-		for(let i = 0; i < moves.length; i++) {
-			let m = moves[i];
-			if(m.captured) {
-				let isNotFree = false;
-				//Test out capture
-				window.game.move(m);
-				//Check if are re-captures on that square
-				let newPossibleMoves = window.game.moves({verbose:true});
-				for(let k = 0; k < newPossibleMoves.length; k++) {
-					let m2 = newPossibleMoves[k];
-					if(m2.captured && m2.to === m.to) {
-						isNotFree = true;
-						break;
-					}
-				}
-				
-				window.game.undo(); //Restore previous position
-
-				if(isNotFree) {
-					continue; //Try next capture
-				} else {
-					possibleFreeCaptures = [{
-						move: m,
-						value: pieceCost[m.captured]
-					}];
-				}
-			}
-		}
-		return possibleFreeCaptures;
-	}
-
-	function getValueCaptures(moves) {
-		let possibleCaptures = [];
-		for(let i = 0; i < moves.length; i++) {
-			let m = moves[i];
-			if(m.captured) {
-				let value = pieceCost[m.captured] - pieceCost[m.piece];
-				if(value >= 0) {
-					possibleCaptures.push({
-						move: m,
-						value: value
-					})
-				} 
-			}
-		}
-		return possibleCaptures;
-	}
-
-	function getSafeMoves(moves) {
-		let possibleSafeMoves = [];
-		for(let i = 0; i < moves.length; i++) {
-			let m = moves[i];
-			window.game.move(m);
-			let newPossibleMoves = window.game.moves({verbose:true});
-			let isSafe = true;
-			for(let k = 0; k < newPossibleMoves.length; k++) {
-				let m2 = newPossibleMoves[k];
-				if(m2.captured && m2.to === m.to) {
-					isSafe = false;
-					break;
-				}
-			}
-			
-			window.game.undo(); //Restore previous position
-			
-			if(!isSafe) {
-				continue;
-			} else {
-				possibleSafeMoves.push({
-					move: m,
-					value: 0
-				});
-			}
-		}
-		return possibleSafeMoves;
+		updateInputs();
 	}
 
 	function getPositionValue() {
@@ -244,36 +242,6 @@
 			sum += pieceActivityWeights[m.piece];
 		}
 		return sum;
-	}
-
-	function getMostValuedAttackedSquare() {
-		let fen = window.game.fen();
-		switchSide();
-		let newPossibleMoves = window.game.moves({verbose:true});
-		let freeCap = getFreeCaptures(newPossibleMoves);
-		let valCap = getValueCaptures(newPossibleMoves);
-		for(let i = 0; i < freeCap.length; i++) {
-			let val = pieceCost[freeCap[i].captured];
-			freeCap[i].val = val;
-		}
-		for(let i = 0; i < valCap.length; i++) {
-			let val = pieceCost[valCap[i].captured] - pieceCost[valCap[i].piece];
-			valCap[i].val = val;
-		}
-
-		let mostValSquare = null;
-		let maxValue = 0;
-		let allMoves = freeCap.concat(valCap);
-
-		for(let i = 0; i < allMoves.length; i++) {
-			if(allMoves[i].val > maxValue) {
-				mostValSquare = allMoves[i].to;
-				maxValue = allMoves[i].val;
-			}
-		}
-
-		window.board.load(fen);
-		return mostValSquare;
 	}
 
 	function switchSide() {
@@ -292,6 +260,11 @@
 				.replace(/\s[a-h][36]\s/, " - ")
 			);
 		}
+	}
+
+	function updateInputs() {
+		fenDisplay.value = window.game.fen();
+		pgnDisplay.value = window.game.pgn();
 	}
 </script>
 </html>
