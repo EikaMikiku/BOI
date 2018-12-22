@@ -79,7 +79,7 @@
 	<button onclick="MakePseudoRandomMove()">Make BOI play!</button>
 </body>
 <script type="text/javascript">
-	const MAXDEPTH = 1;
+	window.MAXDEPTH = 1;
 	let pieceCost = {
 		p: 1, n: 3, b: 3, r: 5, q: 9, k: Infinity
 	};
@@ -169,7 +169,7 @@
 		}
 
 		//Clear thinking box
-		if(depth === MAXDEPTH) {
+		if(depth === window.MAXDEPTH) {
 			thinkingDisplay.innerHTML = "";
 		}
 
@@ -189,7 +189,7 @@
 			}
 		}
 
-		if(depth === MAXDEPTH) {
+		if(depth === window.MAXDEPTH) {
 			//Sort moves by value
 			possibleMoves.sort(function(a, b) {
 				return b.value - a.value;
@@ -223,7 +223,7 @@
 			}, window.newGameDelay * 1000);
 		}
 
-		let moveData = findBestMove(MAXDEPTH);
+		let moveData = findBestMove(window.MAXDEPTH);
 
 		//Switch back to the original game
 		window.calcGame = window.game;
