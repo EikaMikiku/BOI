@@ -22,11 +22,11 @@
 			width: 500px;
 		}
         .white-1e1d7 {
-            background: #ffffff;
+            background: #fff;
             color: black;
         }
         .black-3c85d {
-            background: #d2d2d2;
+            background: #aaa;
             color: black;
         }
 		input {
@@ -129,8 +129,9 @@
 		if(move.captured) {
 			//Check if it is a free capture
 			value += pieceCost[move.captured];
+
 			let isFree = true;
-			window.game.move(move);
+
 			let newPossibleMoves = window.game.moves({verbose:true});
 			for(let k = 0; k < newPossibleMoves.length; k++) {
 				let m2 = newPossibleMoves[k];
