@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>BOI (Bunch Of Ifs)</title>
+	<link rel="stylesheet" type="text/css" href="css/chessboard-0.3.0.min.css">
+	<script type="text/javascript" src="js/chess.min.js"></script>
+	<script type="text/javascript" src="js/jquery-3.3.1.min.js"></script>
+	<script type="text/javascript" src="js/chessboard-0.3.0.min.js"></script>
+	<style type="text/css">
+		body {
+			margin: 0;
+			padding: 0;
+			display: flex;
+			justify-content: center;
+		}
+		#board {
+			display: flex;
+			align-items: center;
+			margin: 0;
+			height: 100vh;
+			width: 500px;
+		}
+        .white-1e1d7 {
+            background: #fff;
+            color: black;
+        }
+        .black-3c85d {
+            background: #aaa;
+            color: black;
+        }
+		input {
+			display: block;
+			position: absolute;
+			bottom: 0;
+			left: 5%;
+			right: 5%;
+			width: 90%;
+			outline: none;
+			border: 1px solid black;
+			padding: 3px;
+		}
+		#fen {
+			top: 0;
+			bottom: auto;
+			text-align: center;
+			width: 500px;
+			margin-left: auto;
+			margin-right: auto;
+		}
+		#thinking {
+			position: absolute;
+			left: 0;
+			height: 80vh;
+			margin-top: -40vh;
+			width: 130px;
+			top: 50%;
+			z-index: 99;
+			border: 1px solid black;
+			border-left: none;
+			font-family: monospace;
+			padding: 3px;
+			overflow: auto;
+			tab-size: 6;
+		}
+		button {
+			position: absolute;
+			right: 0;
+			height: 80vh;
+			margin-top: -40vh;
+			width: 130px;
+			top: 50%;
+		}
+	</style>
+</head>
+<body>
+	<div id="board"></div>
+	<input readonly id="fen">
+	<input readonly id="pgn">
+	<pre id="thinking"></pre>
+	<button onclick="MakePseudoRandomMove()">Make BOI play!</button>
+</body>
+<script type="text/javascript">
+	window.MAXDEPTH = 1;
+
+	let pieceCost = {
+		p: 1, n: 3, b: 3, r: 5, q: 9, k: Infinity
+	};
+	let pieceActivityWeights = {
+		p: 0.01, n: 0.05, b: 0.06, r: 0.02, q: 0.01, k: 0
+	};
+    let castlingWeight = 0.3;
+
+	let boardConfig = {
+		draggable: true,
+		showNotation: true,
+		position: "start",
+		moveSpeed: window.animationSpeed,
+		pieceTheme: "img/chesspieces/alpha/{piece}.png",
+		onDrop: function(from, to) {
+			let move = game.move({
+				from: from,
+				to: to,
+				promotion: "q"
+			});
+			if (move === null) {
+				return "snapback";
+			}
+			updateInputs();
+			setTimeout(MakePseudoRandomMove, window.animationSpeed);
+		}
+	};
+	let fenDisplay = document.getElementById("fen");
+	let pgnDisplay = document.getElementById("pgn");
+	let thinkingDisplay = document.getElementById("thinking");
+
+	window.animationSpeed = 100;
+	window.newGameDelay = 5;
+	window.board = ChessBoard("board", boardConfig);
+	window.game = new Chess(); //Keeps track of the game with PGN
+    window.calcGame = new Chess(); //User for calculations
+
+    function MakePseudoRandomMove(valueOffset) {
+        window.calcGame.load(window.game.fen());
+        //Get list of all moves
+        //Analyse position that results from all moves
+        //Go in depth for top 5, rest are pruned
+
+        let positionValue = getPositionValue();
+        console.log(positionValue);
+    }
+
+    function getPositionValue() {
+        //Get piece count value differences
+        let fen = window.calcGame.fen().split(" ")[0];
+
+        let whitePawns = fen.match(/P/g);
+        let whiteKnights = fen.match(/N/g);
+        let whiteBishops = fen.match(/B/g);
+        let whiteRooks = fen.match(/R/g);
+        let whiteQueen = fen.match(/Q/g);
+        let blackPawns = fen.match(/p/g);
+        let blackKnights = fen.match(/n/g);
+        let blackBishops = fen.match(/b/g);
+        let blackRooks = fen.match(/r/g);
+        let blackQueen = fen.match(/q/g);
+    }
+
+    function updateInputs() {
+        fenDisplay.value = window.game.fen();
+        pgnDisplay.value = window.game.pgn();
+    }
+</script>
+</html>
